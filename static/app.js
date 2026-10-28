@@ -13,6 +13,8 @@ function status(message) {$('status').textContent=message;}
 function render(proposal) {
   edits={}; $('sections').replaceChildren();
   $('empty').hidden=true; $('result').hidden=false;
+  $('draft-badge').textContent='DRAFT · FOR REVIEW';
+  $('document-client').textContent=proposal.client_name || 'Your project';
   const selectedPackage=catalogue.packages.find(p=>p.id===currentRequest.package_id);
   const selectedTemplate=catalogue.templates.find(t=>t.id===proposal.template_id);
   $('warnings').replaceChildren();
@@ -43,14 +45,16 @@ function render(proposal) {
   $('amendments').value='';
 }
 $('draft-form').addEventListener('submit',async event=>{
-  event.preventDefault(); $('generate').disabled=true; $('export').disabled=true; status('Preparing draft…');
+  event.preventDefault(); $('generate').disabled=true; $('generate').firstElementChild.textContent='Preparing your draft…'; $('export').disabled=true; status('Preparing draft…');
   try {
     const request=Object.fromEntries(new FormData(event.target));
     const proposal=await (await api('/api/draft',request)).json(); currentRequest=request; render(proposal);
     $('export').disabled=false; status('Draft ready. Review the open questions and any scope conflicts.');
-  } catch(error) {status(error.message);} finally {$('generate').disabled=false;}
+    $('preview-title').focus({preventScroll:true});
+    if(window.matchMedia('(max-width: 900px)').matches) $('preview-title').scrollIntoView({block:'start'});
+  } catch(error) {status(error.message);} finally {$('generate').disabled=false;$('generate').firstElementChild.textContent='Generate my proposal';}
 });
-$('draft-form').addEventListener('input',()=>{if(currentRequest){$('export').disabled=true;status('Inputs changed. Generate a new draft before exporting.');}});
+$('draft-form').addEventListener('input',()=>{if(currentRequest){$('export').disabled=true;$('draft-badge').textContent='BRIEF UPDATED';status('Inputs changed. Generate a new draft before exporting.');}});
 $('notes').addEventListener('input',()=>{const count=$('notes').value.trim().split(/\s+/).filter(Boolean).length;$('brief-guidance').textContent=`${count} words. Recommended: 40-150 words describing the goal, scope, expected outputs and available inputs. Shorter briefs still work, but may need more clarification.`;});
 $('sample').addEventListener('click',()=>{
   $('notes').value='The goal is to understand customer behaviour.\nClient will provide the data.\nWe need a report.\nIs the dataset ready?\nThe client also requests production deployment.';
@@ -66,6 +70,7 @@ $('export').addEventListener('click',async()=>{
 });
 function describePackage(){
   const p=catalogue.packages.find(p=>p.id===$('package').value);
+  for(const button of $('package-options').children) button.setAttribute('aria-pressed',String(button.dataset.package===p.id));
   $('package-description').replaceChildren();
   const description=document.createElement('span');description.textContent=p.description || 'Review the included services below.';$('package-description').append(description);
   for(const [heading,rows] of [['Suggested work',p.scope],['Expected outputs',p.deliverables]]){
@@ -78,6 +83,13 @@ function describePackage(){
 $('package').addEventListener('change',describePackage);
 (async()=>{try{
   catalogue=await(await api('/api/catalogue')).json();
+  const packageHints={basic:'One focused need',standard:'A complete project',premium:'A phased engagement',custom:'Built around you',consultation:'Advice & direction'};
+  for(const row of catalogue.packages.filter(row=>packageHints[row.id])){
+    const button=document.createElement('button');button.type='button';button.className='package-choice';button.dataset.package=row.id;button.setAttribute('aria-pressed','false');
+    const name=document.createElement('strong');name.textContent=row.name;const hint=document.createElement('small');hint.textContent=packageHints[row.id];button.append(name,hint);
+    button.addEventListener('click',()=>{$('package').value=row.id;$('package').dispatchEvent(new Event('change',{bubbles:true}));$('package').dispatchEvent(new Event('input',{bubbles:true}));});
+    $('package-options').append(button);
+  }
   for (const [id,rows] of [['package',catalogue.packages],['template',catalogue.templates]]) for(const row of rows){const option=document.createElement('option');option.value=row.id;option.textContent=row.sample ? `${row.name} — sample` : row.name;$(id).append(option);}
   $('template').addEventListener('change',()=>{const selected=catalogue.templates.find(t=>t.id===$('template').value);$('template-description')?.remove();const detail=document.createElement('p');detail.id='template-description';detail.className='hint';detail.textContent=[selected.purpose,selected.best_for,selected.approved?'Approved template':'Review wording before sharing'].filter(Boolean).join(' · ');$('template').after(detail);});
   $('template').dispatchEvent(new Event('change'));
